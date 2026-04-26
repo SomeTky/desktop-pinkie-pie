@@ -5,3 +5,18 @@
 设计分为三种操作：
 - 点击
 - 默认状态
+
+
+
+def mousePressEvent(self, event):
+    if event.button() == Qt.LeftButton:
+        self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+        self.press_pos = event.globalPos()
+
+def mouseReleaseEvent(self, event):
+    if event.button() == Qt.LeftButton:
+        # 判断是不是“点击”（移动很小）
+        if (event.globalPos() - self.press_pos).manhattanLength() < 5:
+            self.change_media(1)
+
+    self.drag_position = None

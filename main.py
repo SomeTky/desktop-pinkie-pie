@@ -27,8 +27,6 @@ class FloatingImage(QWidget):
         self.current_scale = 1.0
         self.scale_step = 0.1
 
-        # self.is_movie = False
-        # self.movie = None
         self.press_pos = None
         self.moved = False
         self.original_size = None
@@ -43,7 +41,7 @@ class FloatingImage(QWidget):
     def initUI(self):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        
+
         # 修复高DPI模糊
         if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
             QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
@@ -57,9 +55,30 @@ class FloatingImage(QWidget):
 
         self.load_media()
 
+    # ✅ 新增：统一缩放入口
+    def apply_scale(self):
+        """统一应用缩放（GIF + 静态图）"""
+        if not self.original_size:
+            return
+
+        w = int(self.original_size[0] * self.current_scale)
+        h = int(self.original_size[1] * self.current_scale)
+
+        self.label.resize(w, h)
+        self.resize(w, h)
+
+        if self.is_movie:
+            self.force_update_movie_frame()
+        else:
+            if self.original_pixmap:
+                scaled = self.original_pixmap.scaled(
+                    w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                self.label.setPixmap(scaled)
+
     def change_media(self, choice=0):
         '''
-        如果choice是0，从static_actions里面选动作，否在从click_action中选
+        如果choice是0，从static_actions里面选动作，否则从click_action中选
         '''
         # 随机选一张（注意这里有个坑👇）
         if choice == 0:
@@ -78,6 +97,9 @@ class FloatingImage(QWidget):
         # 重新加载
         self.load_media()
 
+        # ⭐关键：延迟应用缩放（防止还没加载完成）
+        QTimer.singleShot(0, self.apply_scale)
+
     def load_media(self):
         movie = QMovie(self.image_path)
         if movie.isValid() and movie.frameCount() > 1:
@@ -86,8 +108,8 @@ class FloatingImage(QWidget):
             first_frame = movie.currentPixmap()
             if not first_frame.isNull():
                 self.original_size = (first_frame.width(), first_frame.height())
-                self.current_scale = 1.0
-                self.update_geometry_for_movie()
+                # 删除了原来的 self.current_scale = 1.0，保持当前缩放
+                self.apply_scale()  # 统一缩放显示
                 self.movie.frameChanged.connect(self.on_frame_changed)
                 self.movie.start()
             else:
@@ -101,7 +123,7 @@ class FloatingImage(QWidget):
                 sys.exit(1)
             self.original_size = (pixmap.width(), pixmap.height())
             self.original_pixmap = pixmap
-            self.update_pixmap()
+            self.apply_scale()  # 统一缩放显示
 
     def _on_first_frame_ready(self, frame_number):
         if self.original_size is not None:
@@ -111,34 +133,13 @@ class FloatingImage(QWidget):
             self.original_size = (pix.width(), pix.height())
             self.movie.frameChanged.disconnect(self._on_first_frame_ready)
             self.movie.frameChanged.connect(self.on_frame_changed)
-            self.current_scale = 1.0
-            self.update_geometry_for_movie()
+            # 删除了原来的 self.current_scale = 1.0，保持当前缩放
+            self.apply_scale()  # 统一缩放窗口和画面
             # 立即显示第一帧，避免空白
             self.on_frame_changed()
 
-    # ====================== 修复：缺失的核心函数 ======================
-    def update_geometry_for_movie(self):
-        """同步GIF窗口大小 —— 你之前没写这个！"""
-        if not self.original_size:
-            return
-        w = int(self.original_size[0] * self.current_scale)
-        h = int(self.original_size[1] * self.current_scale)
-        self.label.resize(w, h)
-        self.resize(w, h)
-
-    def update_pixmap(self):
-        """静态图片缩放（无闪烁版）"""
-        if self.is_movie or not self.original_pixmap:
-            return
-        new_w = int(self.original_size[0] * self.current_scale)
-        new_h = int(self.original_size[1] * self.current_scale)
-        scaled = self.original_pixmap.scaled(new_w, new_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.label.setPixmap(scaled)
-        self.label.resize(new_w, new_h)
-        self.resize(new_w, new_h)
-
     def force_update_movie_frame(self):
-        """强制刷新当前帧（删除clear，彻底消除闪烁）"""
+        """强制刷新当前帧（用于缩放时立即更新GIF画面）"""
         if not self.is_movie or not self.movie or not self.original_size:
             return
         current = self.movie.currentPixmap()
@@ -150,7 +151,7 @@ class FloatingImage(QWidget):
         self.label.setPixmap(scaled)
 
     def on_frame_changed(self):
-        """GIF帧更新（删除clear，彻底修复闪烁）"""
+        """GIF帧更新"""
         if not self.is_movie or not self.original_size:
             return
         current = self.movie.currentPixmap()
@@ -168,11 +169,7 @@ class FloatingImage(QWidget):
         if abs(new_scale - self.current_scale) < 1e-6:
             return
         self.current_scale = new_scale
-        if self.is_movie:
-            self.update_geometry_for_movie()
-            self.force_update_movie_frame()
-        else:
-            self.update_pixmap()
+        self.apply_scale()  # 统一应用缩放
 
     def keyPressEvent(self, event):
         key = event.key()
