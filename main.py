@@ -1,20 +1,42 @@
 import sys
+import random
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap, QMovie
 
+
+click_actions = [
+    'DontTouchMe.gif',
+    'HappyPig.gif',
+    'mock.gif',
+    'Running.gif',
+    'WalkFastSad.gif'
+]
+static_actions = [
+    'EatHandSad.gif',
+    'HideLaugh.gif',
+    'JumpHappy.gif',
+    'JumpExcitied.gif',
+]
+
 class FloatingImage(QWidget):
-    def __init__(self, image_path):
+    def __init__(self):
         super().__init__()
-        self.image_path = image_path
+        self.image_path = random.choice(static_actions)
         self.drag_position = None
         self.current_scale = 1.0
         self.scale_step = 0.1
 
-        self.is_movie = False
-        self.movie = None
+        # self.is_movie = False
+        # self.movie = None
+        self.press_pos = None
+        self.moved = False
         self.original_size = None
         self.original_pixmap = None
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.change_media)  # 到时间就调用换图函数
+        self.timer.start(10000)  # 10000ms = 10秒
 
         self.initUI()
 
@@ -33,6 +55,27 @@ class FloatingImage(QWidget):
         self.label.setAutoFillBackground(False)
         self.label.setScaledContents(False)
 
+        self.load_media()
+
+    def change_media(self, choice=0):
+        '''
+        如果choice是0，从static_actions里面选动作，否在从click_action中选
+        '''
+        # 随机选一张（注意这里有个坑👇）
+        if choice == 0:
+            self.image_path = random.choice(static_actions)
+        else:
+            self.image_path = random.choice(click_actions)
+
+        # 如果是GIF，先停掉旧的
+        if self.movie:
+            self.movie.stop()
+            self.movie = None
+
+        self.original_size = None
+        self.original_pixmap = None
+
+        # 重新加载
         self.load_media()
 
     def load_media(self):
@@ -131,7 +174,6 @@ class FloatingImage(QWidget):
         else:
             self.update_pixmap()
 
-    # ====================== 事件函数不变 ======================
     def keyPressEvent(self, event):
         key = event.key()
         if key == Qt.Key_Escape:
@@ -149,24 +191,38 @@ class FloatingImage(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            self.press_pos = event.globalPos()
             self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            self.moved = False
             event.accept()
 
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.LeftButton and self.drag_position is not None:
             self.move(event.globalPos() - self.drag_position)
+
+            # 判断是否发生“拖动”
+            if (event.globalPos() - self.press_pos).manhattanLength() > 5:
+                self.moved = True
+
             event.accept()
 
     def mouseReleaseEvent(self, event):
-        self.drag_position = None
+        if event.button() == Qt.LeftButton:
+            # 没有明显拖动 => 才算点击
+            if not self.moved:
+                self.change_media(1)
 
-    def closeEvent(self, event):
-        if self.movie:
-            self.movie.stop()
-        event.accept()
+        self.drag_position = None
+        self.press_pos = None
+        self.moved = False
+
+    # def closeEvent(self, event):
+    #     if self.movie:
+    #         self.movie.stop()
+    #     event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = FloatingImage("./pinkie.gif")
+    window = FloatingImage()
     window.show()
     sys.exit(app.exec_())
